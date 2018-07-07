@@ -1,3 +1,4 @@
+import { readdirSync } from 'fs';
 import { join } from 'path';
 
 import {
@@ -9,7 +10,7 @@ import {
   generateFilesWhitelistPredicate,
 } from './utils';
 import { ModifiedFile } from './modified-file';
-import { preciseFormatterPrettier } from './precise-formatters/prettier';
+import { PreciseFormatter } from './precise-formatter';
 
 export type ProcessingStatus = 'NOT_UPDATED' | 'UPDATED' | 'INVALID_FORMATTING';
 
@@ -67,14 +68,18 @@ export function main(
       ...additionalOptions,
     };
     /**
-     * Note: Will be exposed as an option if/when new formatters are added.
+     * Resolve the requested formatter from our first-party set.
      */
-    if (options.formatter !== 'prettier') {
-      throw new Error(
-        `The only supported value for "formatter" option is "prettier"`,
-      );
+    let selectedFormatter: PreciseFormatter<{}>;
+    try {
+      selectedFormatter = require(`./precise-formatters/${options.formatter}`).default;
+    } catch {
+      throw new Error(`${options.formatter} is not a known formatter. Available options are:
+      ${readdirSync(join(__dirname, 'precise-formatters'))
+          .filter(s => s.endsWith('.js'))
+          .map(s => s.substr(0, s.length - 3))}`);
     }
-    const selectedFormatter = preciseFormatterPrettier;
+
     callbacks.onInit(workingDirectory);
     /**
      * Resolve the relevant .git directory's parent directory up front, as we will need this when

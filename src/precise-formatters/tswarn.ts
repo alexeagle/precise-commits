@@ -1,12 +1,6 @@
 import * as fs from 'fs';
-import { extname, join } from 'path';
-import {
-  Options as PrettierOptions,
-  getSupportInfo,
-  format,
-  resolveConfig,
-  check,
-} from 'prettier';
+import { dirname, extname, join } from 'path';
+import * as ts from 'typescript';
 
 import { PreciseFormatter } from '../precise-formatter';
 import { CharacterRange } from '../utils';
@@ -15,26 +9,25 @@ const ignore = require('ignore');
 const DiffMatchPatch = require('diff-match-patch');
 const dmp = new DiffMatchPatch();
 
-let PRETTIER_SUPPORTED_FILE_EXTENSIONS: string[] = [];
-getSupportInfo().languages.forEach(language => {
-  PRETTIER_SUPPORTED_FILE_EXTENSIONS = [
-    ...PRETTIER_SUPPORTED_FILE_EXTENSIONS,
-    ...language.extensions,
-  ];
-});
-
-export const preciseFormatterPrettier: PreciseFormatter<PrettierOptions> = {
+const tswarn: PreciseFormatter<ts.CompilerOptions> = {
   /**
-   * Resolve the relevant prettier config for the given
-   * modified file path.
+   * Resolve the relevant config for the given modified file path.
    */
-  resolveConfig(modifiedFilePath: string): PrettierOptions | null {
-    return {
-      ...resolveConfig.sync(modifiedFilePath, {
-        useCache: false,
-      }),
-      filepath: modifiedFilePath,
-    };
+  resolveConfig(modifiedFilePath: string): ts.CompilerOptions | null {
+    // Search up for 'tsconfig.json' like an editor does
+    let configFileName: string | undefined;
+    let searchPath = modifiedFilePath;
+    while (!configFileName) {
+      searchPath = dirname(searchPath);
+      if (!searchPath) throw new Error(`no tsconfig.json file found above ${modifiedFilePath}`);
+      const candidate = join(searchPath, 'tsconfig.json');
+      if (fs.existsSync(candidate)) {
+        configFileName = candidate;
+      }
+    }
+    const configContent = ts.readConfigFile(configFileName, ts.sys.readFile);
+    const configParseResult = ts.parseJsonConfigFileContent(configContent, ts.sys, '.');
+    return configParseResult.options;
   },
   /**
    * Return true if the whole file has already been formatted appropriately based on
@@ -118,13 +111,11 @@ export const preciseFormatterPrettier: PreciseFormatter<PrettierOptions> = {
       .createFilter();
   },
   /**
-   * Return true if prettier supports the file extension of the given
-   * filename.
+   * Only support .ts / .tsx files.
    */
   hasSupportedFileExtension(filename: string) {
-    const fileExtension = extname(filename);
-    return PRETTIER_SUPPORTED_FILE_EXTENSIONS.includes(fileExtension);
+    return extname(filename).match(/^tsx?$/);
   },
 };
 
-export default preciseFormatterPrettier;
+export default tswarn;
